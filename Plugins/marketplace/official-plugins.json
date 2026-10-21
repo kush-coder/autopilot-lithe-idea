@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "description": "Official plugins released through their own tag series and listed in index.json. A plugin is released when its packageDirectory changes and its plugin.json version has no tag yet; changing the directory without a new version fails CI.",
+  "plugins": []
+}

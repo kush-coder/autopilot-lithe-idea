@@ -1,0 +1,103 @@
+import SwiftUI
+import UniformTypeIdentifiers
+
+struct DiagnosticsExportSheet: View {
+    @Environment(\.locale) private var locale
+    @ObservedObject var feature: DiagnosticsFeatureModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Export Diagnostics Bundle")
+                .font(LitheTheme.uiFont(size: 17, weight: .semibold))
+
+            Text("Only the files below are collected. Credentials, tokens, and home-directory paths are redacted automatically; workspace source, editor buffers, and terminal history are never included.")
+                .font(LitheTheme.uiFont(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Module: \(moduleTitle) · Session: \(sessionTitle) · Minimum level: \(feature.exportQuery.minimumLevel?.uppercased() ?? "INFO")")
+                .font(LitheTheme.smallFont).foregroundStyle(.secondary)
+            content
+                .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    feature.dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button("Export…") {
+                    exportToChosenLocation()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!isReadyToExport)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+    }
+
+    private var moduleTitle: String {
+        let key = ["all": "All modules", "application": "Application", "language": "Editor and language services", "run": "Build, run and debug", "git": "Git", "plugins": "Plugins", "performance": "Performance"][feature.exportQuery.category ?? "all"] ?? "All modules"
+        return String(localized: String.LocalizationValue(key), locale: locale)
+    }
+
+    private var sessionTitle: String {
+        let key = ["current": "Current session", "previous": "Previous session", "all": "All sessions"][feature.exportQuery.session] ?? "Current session"
+        return String(localized: String.LocalizationValue(key), locale: locale)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch feature.state {
+        case .idle, .preparing:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Gathering diagnostics…")
+                    .foregroundStyle(.secondary)
+            }
+        case .awaitingConfirmation(let manifest):
+            fileList(manifest)
+        case .exporting:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Creating archive…")
+                    .foregroundStyle(.secondary)
+            }
+        case .completed(let url):
+            Label("Saved to \(url.path)", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.secondary)
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+        }
+    }
+
+    private func fileList(_ manifest: RustCoreBridge.DiagnosticsManifestPayload) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(manifest.files, id: \.relativePath) { file in
+                HStack {
+                    Text(file.relativePath)
+                    Spacer()
+                    Text(ByteCountFormatter.string(fromByteCount: file.sizeBytes, countStyle: .file))
+                        .foregroundStyle(.secondary)
+                }
+                .font(LitheTheme.uiFont(size: 12, design: .monospaced))
+            }
+        }
+    }
+
+    private var isReadyToExport: Bool {
+        if case .awaitingConfirmation = feature.state { return true }
+        return false
+    }
+
+    private func exportToChosenLocation() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "Lithe-Diagnostics.zip"
+        panel.allowedContentTypes = [.zip]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { await feature.export(to: url) }
+    }
+}

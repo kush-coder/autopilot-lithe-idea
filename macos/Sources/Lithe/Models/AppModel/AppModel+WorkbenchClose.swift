@@ -1,0 +1,78 @@
+import Foundation
+
+extension AppModel {
+    /// Closes the content currently occupying the editor surface before the
+    /// native window close command is allowed to reach AppKit.
+    @discardableResult
+    func requestCloseActiveWorkbenchItem() -> Bool {
+        if standaloneFileURL != nil {
+            closeStandaloneFile()
+            return true
+        }
+        if documentFeature.hasPendingDocumentClose {
+            return true
+        }
+        if isImplementationChooserVisible {
+            closeLanguageNavigationResults()
+            return true
+        }
+        if isAgentEditorSelected {
+            showAgentChatsInToolWindow()
+            return true
+        }
+        if isDatabaseWorkspaceSelected {
+            closeDatabaseTab(activeDatabaseEditorTab)
+            return true
+        }
+        if branchComparison != nil {
+            closeBranchComparison()
+            return true
+        }
+        if isRepositoryDiffSelected {
+            closeGitCommitDiff()
+            return true
+        }
+        if selectedChange != nil {
+            gitFeatureIfActive?.closeWorkingTreeDiff()
+            return true
+        }
+        if let session = activeEditorTerminalSession {
+            requestCloseTerminalSession(session)
+            return true
+        }
+        if let document = activeDocument {
+            requestCloseDocument(document)
+            return true
+        }
+        guard let item = editorTabItems.last else { return false }
+        switch item {
+        case .agentConversation: showAgentChatsInToolWindow()
+        case .databaseOverview:
+            closeDatabaseWorkspace(overview: true)
+        case .database, .databaseQuery:
+            closeDatabaseTab(item)
+        case .repositoryDiff:
+            closeGitCommitDiff()
+        case .document(let documentID):
+            guard let document = openDocuments.first(where: { $0.id == documentID }) else {
+                editorTabOrderFeature.remove(item)
+                return true
+            }
+            requestCloseDocument(document)
+        case .terminal(let sessionID):
+            guard let session = terminalSessions.first(where: { $0.id == sessionID }) else {
+                editorTabOrderFeature.remove(item)
+                terminalPlacementFeature.removeSession(sessionID)
+                return true
+            }
+            requestCloseTerminalSession(session)
+        case .media(let mediaID):
+            if let media = openMediaDocuments.first(where: { $0.id == mediaID }) {
+                closeMediaDocument(media)
+            } else {
+                editorTabOrderFeature.remove(item)
+            }
+        }
+        return true
+    }
+}
